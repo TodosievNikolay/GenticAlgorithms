@@ -3,9 +3,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 
-# =========================
 # PART 1 — TSP PARSER
-# =========================
 
 def load_tsp(path):
     cities = []
@@ -34,10 +32,7 @@ def distance_matrix(cities):
             dist[i, j] = np.hypot(dx, dy)
     return dist
 
-
-# =========================
 # PART 2 — SOLUTIONS & FITNESS
-# =========================
 
 def fitness(tour, dist):
     return sum(
@@ -56,10 +51,7 @@ def random_tour(n):
     random.shuffle(tour)
     return tour
 
-
-# =========================
 # PART 2 — GREEDY
-# =========================
 
 def greedy(start, dist):
     n = len(dist)
@@ -77,10 +69,7 @@ def greedy(start, dist):
 
     return tour
 
-
-# =========================
 # PART 3 — POPULATION
-# =========================
 
 def initial_population(size, dist, greedy_seeds=0):
     pop = []
@@ -112,18 +101,12 @@ def population_info(pop):
         f"Worst={scores[-1]:.2f}"
     )
 
-
-# =========================
 # PART 3 — SELECTION
-# =========================
 
 def tournament_selection(pop, k=3):
     return min(random.sample(pop, k), key=lambda x: x["fitness"])
 
-
-# =========================
 # PART 3 — CROSSOVER (OX)
-# =========================
 
 def ordered_crossover(p1, p2):
     n = len(p1)
@@ -139,10 +122,7 @@ def ordered_crossover(p1, p2):
             idx += 1
     return child
 
-
-# =========================
 # PART 4 — MUTATION
-# =========================
 
 def inversion_mutation(tour, prob):
     if random.random() < prob:
@@ -150,10 +130,7 @@ def inversion_mutation(tour, prob):
         tour[a:b] = reversed(tour[a:b])
     return tour
 
-
-# =========================
 # PART 4 — EPOCH
-# =========================
 
 def next_generation(pop, dist, mutation_rate=0.02, elite=1):
     new_pop = sorted(pop, key=lambda x: x["fitness"])[:elite]
@@ -172,10 +149,7 @@ def next_generation(pop, dist, mutation_rate=0.02, elite=1):
 
     return new_pop
 
-
-# =========================
 # PART 5 — FULL RUN + PLOT
-# =========================
 
 def run_ga(tsp_file):
     cities = load_tsp(tsp_file)
@@ -225,9 +199,8 @@ def run_ga(tsp_file):
     plt.legend()
     plt.grid(True)
     plt.show()
-# =========================
+
 # ENTRY POINT
-# =========================
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
