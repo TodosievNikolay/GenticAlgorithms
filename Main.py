@@ -1,119 +1,237 @@
-
-"""
-Genetic Algorithm for Traveling Salesman Problem (TSP)
-The program:
-- loads TSP files
-- runs random, greedy and genetic algorithm
-- prints results for comparison
-"""
+import sys
 import random
-import math
+import numpy as np
+import matplotlib.pyplot as plt
 
-def load_tsp(filename):
+# =========================
+# PART 1 — TSP PARSER
+# =========================
+
+def load_tsp(path):
     cities = []
-    with open(filename, "r") as file:
-        for line in file:
-            parts = line.strip().split()
-            if len(parts) == 3 and parts[0].isdigit():
-                cities.append((int(parts[0]), float(parts[1]), float(parts[2])))
-    return cities
+    with open(path, "r") as f:
+        read = False
+        for line in f:
+            line = line.strip()
+            if line == "NODE_COORD_SECTION":
+                read = True
+                continue
+            if line == "EOF":
+                break
+            if read:
+                i, x, y = line.split()
+                cities.append((int(i), float(x), float(y)))
+    return np.array(cities)
 
-def distance(c1, c2):
-    return math.sqrt((c1[1] - c2[1])**2 + (c1[2] - c2[2])**2)
 
-def fitness(route, cities):
-    total = 0
-    for i in range(len(route)):
-        a = cities[route[i] - 1]
-        b = cities[route[(i + 1) % len(route)] - 1]
-        total += distance(a, b)
-    return total
+def distance_matrix(cities):
+    n = len(cities)
+    dist = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            dx = cities[i][1] - cities[j][1]
+            dy = cities[i][2] - cities[j][2]
+            dist[i, j] = np.hypot(dx, dy)
+    return dist
 
-def random_solution(cities):
-    route = [c[0] for c in cities]
-    random.shuffle(route)
-    return route
 
-def greedy_solution(cities, start):
-    unvisited = cities[:]
-    current = unvisited.pop(start)
-    route = [current[0]]
-    while unvisited:
-        next_city = min(unvisited, key=lambda c: distance(current, c))
-        unvisited.remove(next_city)
-        route.append(next_city[0])
-        current = next_city
-    return route
+# =========================
+# PART 2 — SOLUTIONS & FITNESS
+# =========================
 
-def tournament_selection(population, cities, k=5):
-    group = random.sample(population, k)
-    return min(group, key=lambda r: fitness(r, cities))
+def fitness(tour, dist):
+    return sum(
+        dist[tour[i], tour[(i + 1) % len(tour)]]
+        for i in range(len(tour))
+    )
+
+
+def print_solution(tour, score):
+    print("Tour:", " ".join(map(str, tour)))
+    print(f"Score: {score:.2f}")
+
+
+def random_tour(n):
+    tour = list(range(n))
+    random.shuffle(tour)
+    return tour
+
+
+# =========================
+# PART 2 — GREEDY
+# =========================
+
+def greedy(start, dist):
+    n = len(dist)
+    visited = {start}
+    tour = [start]
+
+    while len(tour) < n:
+        last = tour[-1]
+        next_city = min(
+            (i for i in range(n) if i not in visited),
+            key=lambda x: dist[last][x]
+        )
+        visited.add(next_city)
+        tour.append(next_city)
+
+    return tour
+
+
+# =========================
+# PART 3 — POPULATION
+# =========================
+
+def initial_population(size, dist, greedy_seeds=0):
+    pop = []
+    n = len(dist)
+
+    for i in range(greedy_seeds):
+        tour = greedy(i % n, dist)
+        pop.append({
+            "tour": tour,
+            "fitness": fitness(tour, dist)
+        })
+
+    while len(pop) < size:
+        tour = random_tour(n)
+        pop.append({
+            "tour": tour,
+            "fitness": fitness(tour, dist)
+        })
+
+    return pop
+
+
+def population_info(pop):
+    scores = sorted(ind["fitness"] for ind in pop)
+    print(
+        f"Size={len(pop)} | "
+        f"Best={scores[0]:.2f} | "
+        f"Median={scores[len(scores)//2]:.2f} | "
+        f"Worst={scores[-1]:.2f}"
+    )
+
+
+# =========================
+# PART 3 — SELECTION
+# =========================
+
+def tournament_selection(pop, k=3):
+    return min(random.sample(pop, k), key=lambda x: x["fitness"])
+
+
+# =========================
+# PART 3 — CROSSOVER (OX)
+# =========================
 
 def ordered_crossover(p1, p2):
-    size = len(p1)
-    a, b = sorted(random.sample(range(size), 2))
-    child = [None] * size
+    n = len(p1)
+    a, b = sorted(random.sample(range(n), 2))
+    child = [-1] * n
     child[a:b] = p1[a:b]
-    rest = [c for c in p2 if c not in child]
+
+    fill = [x for x in p2 if x not in child]
     idx = 0
-    for i in range(size):
-        if child[i] is None:
-            child[i] = rest[idx]
+    for i in range(n):
+        if child[i] == -1:
+            child[i] = fill[idx]
             idx += 1
     return child
 
-def inversion_mutation(route, prob=0.02):
+
+# =========================
+# PART 4 — MUTATION
+# =========================
+
+def inversion_mutation(tour, prob):
     if random.random() < prob:
-        a, b = sorted(random.sample(range(len(route)), 2))
-        route[a:b] = reversed(route[a:b])
-    return route
+        a, b = sorted(random.sample(range(len(tour)), 2))
+        tour[a:b] = reversed(tour[a:b])
+    return tour
 
-def genetic_algorithm(cities, pop_size=100, generations=500):
-    population = [random_solution(cities) for _ in range(pop_size)]
-    best_route = None
-    best_score = float("inf")
 
-    for _ in range(generations):
-        population.sort(key=lambda r: fitness(r, cities))
-        new_population = population[:5]
+# =========================
+# PART 4 — EPOCH
+# =========================
 
-        while len(new_population) < pop_size:
-            p1 = tournament_selection(population, cities)
-            p2 = tournament_selection(population, cities)
-            child = ordered_crossover(p1, p2)
-            child = inversion_mutation(child)
-            new_population.append(child)
+def next_generation(pop, dist, mutation_rate=0.02, elite=1):
+    new_pop = sorted(pop, key=lambda x: x["fitness"])[:elite]
 
-        population = new_population
+    while len(new_pop) < len(pop):
+        p1 = tournament_selection(pop)
+        p2 = tournament_selection(pop)
 
-        score = fitness(population[0], cities)
-        if score < best_score:
-            best_score = score
-            best_route = population[0]
+        child = ordered_crossover(p1["tour"], p2["tour"])
+        child = inversion_mutation(child, mutation_rate)
 
-    return best_route, best_score
+        new_pop.append({
+            "tour": child,
+            "fitness": fitness(child, dist)
+        })
 
-def run_experiment(filename):
-    print("\nFile:", filename)
-    cities = load_tsp(filename)
+    return new_pop
 
-    random_results = [fitness(random_solution(cities), cities) for _ in range(100)]
-    print("Random best:", min(random_results))
 
-    greedy_results = []
-    for i in range(len(cities)):
-        greedy_results.append(fitness(greedy_solution(cities, i), cities))
-    print("Greedy best:", min(greedy_results))
+# =========================
+# PART 5 — FULL RUN + PLOT
+# =========================
 
-    _, ga_best = genetic_algorithm(cities)
-    print("GA best:", ga_best)
+def run_ga(tsp_file):
+    cities = load_tsp(tsp_file)
+    dist = distance_matrix(cities)
+
+    # === PARSER VISUALIZATION ===
+    plot_cities(cities, "Parsed cities (parser output)")
+
+    # === GREEDY ===
+    greedy_tour_best, greedy_score = greedy_analysis(cities, dist)
+
+    # === RANDOM ===
+    random_analysis(cities, dist)
+
+    # === GA ===
+    pop = initial_population(
+        size=100,
+        dist=dist,
+        greedy_seeds=5
+    )
+
+    best_scores = []
+    best_solution = None
+
+    for epoch in range(300):
+        pop = next_generation(pop, dist)
+        best = min(pop, key=lambda x: x["fitness"])
+        best_scores.append(best["fitness"])
+        best_solution = best
+
+        if epoch % 20 == 0:
+            print(f"Epoch {epoch}", end=" → ")
+            population_info(pop)
+
+    print("\n=== BEST GA SOLUTION ===")
+    print_solution(best_solution["tour"], best_solution["fitness"])
+
+    plot_tour(cities, best_solution["tour"], "Best GA Tour")
+
+    # === CONVERGENCE PLOT ===
+    plt.figure(figsize=(7, 4))
+    plt.plot(best_scores, label="Best GA fitness")
+    plt.axhline(greedy_score, color="red", linestyle="--", label="Best Greedy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Tour length")
+    plt.title("GA convergence vs Greedy")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+# =========================
+# ENTRY POINT
+# =========================
 
 if __name__ == "__main__":
-    files = [
-        "berlin11_modified.tsp",
-        "berlin52.tsp",
-        "kroA100.tsp",
-        "kroA150.tsp"
-    ]
-    for f in files:
-        run_experiment(f)
+    if len(sys.argv) != 2:
+        print("Usage: python tsp_ga_all_parts.py file.tsp")
+        sys.exit(1)
+
+    run_ga(sys.argv[1])
